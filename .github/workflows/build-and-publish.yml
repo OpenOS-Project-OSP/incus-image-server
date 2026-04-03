@@ -1,4 +1,4 @@
-name: Build, Publish & Verify Images
+name: Build & Publish Images
 
 # Runs on push to main (manifest changes) or weekly to pick up upstream
 # distro releases. Can also be triggered manually for a specific distro/arch.
@@ -157,171 +157,77 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: image-wrapper-${{ matrix.script }}-${{ matrix.arch }}
+          name: image-wrapper-${{ matrix.script }}-${{ matrix.board || matrix.arch }}
           path: /tmp/image-output/
           retention-days: 1
 
-  # ── 4. Publish all built images to the image server ──────────────────────
+  # ── 4. Publish all built images as GitHub Release assets ─────────────────
+  # Images are tagged as: images-<YYYYMMDD>
+  # Each artifact is uploaded as: <distro>-<arch>-rootfs.tar.xz + metadata.tar.xz
+  #
+  # To publish to a polar simplestreams server instead (or in addition),
+  # set IMAGE_SERVER_URL and IMAGE_SERVER_TOKEN secrets and restore the
+  # polar publish block from git history.
   publish:
     needs: [build, build-wrappers]
     runs-on: ubuntu-latest
     if: ${{ always() && (needs.build.result == 'success' || needs.build-wrappers.result == 'success') }}
-    env:
-      SERVER_URL: ${{ secrets.IMAGE_SERVER_URL }}
-      PUBLISH_TOKEN: ${{ secrets.IMAGE_SERVER_TOKEN }}
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download all image artifacts
         uses: actions/download-artifact@v4
         with:
           path: /tmp/artifacts
           pattern: image-*
 
-      - name: Publish images to server
+      - name: Compute release tag
+        id: tag
+        run: echo "tag=images-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Flatten and rename artifacts for release
+        id: files
         run: |
           set -euo pipefail
+          mkdir -p /tmp/release-files
 
           for artifact_dir in /tmp/artifacts/image-*/; do
-            # Parse distro, arch, serial from artifact directory name
-            # Format: image-<distro>-<arch>-<serial> or image-wrapper-<script>-<arch>
             dirname="$(basename "$artifact_dir")"
-            echo "==> Publishing: $dirname"
 
-            # Find rootfs and metadata tarballs
+            # Derive a short prefix from the artifact name for the release filename.
+            # image-<distro>-<arch>-<serial>  → <distro>-<arch>
+            # image-wrapper-<script>-<board|arch> → wrapper-<script>-<board|arch>
+            if [[ "$dirname" == image-wrapper-* ]]; then
+              prefix="${dirname#image-wrapper-}"
+              prefix="wrapper-${prefix%.sh}"   # strip .sh suffix if present
+            else
+              # strip leading "image-" and trailing "-<serial>" (8 digits)
+              prefix="${dirname#image-}"
+              prefix="${prefix%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"
+            fi
+
             rootfs="$(find "$artifact_dir" -name 'rootfs.tar.xz' | head -1)"
             metadata="$(find "$artifact_dir" -name 'metadata.tar.xz' | head -1)"
 
-            if [ -z "$rootfs" ] || [ -z "$metadata" ]; then
-              echo "    Skipping — missing rootfs or metadata"
-              continue
-            fi
-
-            # Extract image properties from metadata.yaml
-            meta_yaml="$(find "$artifact_dir" -name 'metadata.yaml' | head -1)"
-            if [ -n "$meta_yaml" ]; then
-              OS="$(grep '^  os:' "$meta_yaml" | awk '{print $2}' | tr -d '"')"
-              RELEASE="$(grep '^  release:' "$meta_yaml" | awk '{print $2}' | tr -d '"')"
-              ARCH="$(grep '^  architecture:' "$meta_yaml" | awk '{print $2}' | tr -d '"')"
-              VARIANT="$(grep '^  variant:' "$meta_yaml" | awk '{print $2}' | tr -d '"')"
-              SERIAL="$(grep '^  serial:' "$meta_yaml" | awk '{print $2}' | tr -d '"')"
-            else
-              # Fall back to parsing artifact dir name
-              OS="$(echo "$dirname" | cut -d'-' -f2)"
-              ARCH="$(echo "$dirname" | rev | cut -d'-' -f2 | rev)"
-              RELEASE="current"
-              VARIANT="default"
-              SERIAL="$(date +%Y%m%d)"
-            fi
-
-            echo "    OS=$OS RELEASE=$RELEASE ARCH=$ARCH VARIANT=$VARIANT SERIAL=$SERIAL"
-
-            # Look up product by aliases key (polar's ProductController.show uses
-            # Streams.get_product/1 → Product.by_key/2 which matches on aliases or os).
-            # The aliases field is set to "<os>/<release>/<arch>/<variant>" by convention.
-            PRODUCT_KEY="$OS/$RELEASE/$ARCH/$VARIANT"
-            PRODUCT_RESP=$(curl -sf -X GET \
-              -H "Authorization: Bearer $PUBLISH_TOKEN" \
-              "$SERVER_URL/publish/products/$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PRODUCT_KEY', safe=''))")" \
-              || echo '{}')
-            PRODUCT_ID=$(echo "$PRODUCT_RESP" | python3 -c \
-              "import json,sys; d=json.load(sys.stdin); print(d.get('data',{}).get('id',''))" \
-              2>/dev/null || echo '')
-
-            if [ -z "$PRODUCT_ID" ]; then
-              echo "    Product not found for key '$PRODUCT_KEY' — skipping."
-              echo "    Create the product via the dashboard or API first, then re-run."
-              continue
-            fi
-
-            # Create version
-            VERSION_RESP=$(curl -sf -X POST \
-              -H "Authorization: Bearer $PUBLISH_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"version\":{\"serial\":\"$SERIAL\"}}" \
-              "$SERVER_URL/publish/products/$PRODUCT_ID/versions")
-            VERSION_ID=$(echo "$VERSION_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['id'])")
-
-            # Upload files via direct upload endpoint
-            curl -sf -X POST \
-              -H "Authorization: Bearer $PUBLISH_TOKEN" \
-              -F "rootfs=@$rootfs" \
-              -F "metadata=@$metadata" \
-              "$SERVER_URL/publish/products/$PRODUCT_ID/versions/$VERSION_ID/upload"
-
-            echo "    Published version $VERSION_ID"
+            [ -n "$rootfs"   ] && cp "$rootfs"   "/tmp/release-files/${prefix}-rootfs.tar.xz"
+            [ -n "$metadata" ] && cp "$metadata" "/tmp/release-files/${prefix}-metadata.tar.xz"
           done
 
-  # ── 5. Verify simplestreams index ─────────────────────────────────────────
-  verify:
-    needs: publish
-    runs-on: ubuntu-latest
-    env:
-      SERVER_URL: ${{ secrets.IMAGE_SERVER_URL }}
-      SPACE_TOKEN: ${{ secrets.IMAGE_SERVER_SPACE_TOKEN }}
+          echo "Release files:"
+          ls -lh /tmp/release-files/
 
-    steps:
-      - name: Fetch simplestreams index
-        run: |
-          set -euo pipefail
+      - name: Create GitHub Release and upload images
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Images ${{ steps.tag.outputs.tag }}
+          body: |
+            Automated image build — ${{ steps.tag.outputs.tag }}
 
-          echo "==> Fetching index.json"
-          INDEX=$(curl -sf "$SERVER_URL/spaces/$SPACE_TOKEN/streams/v1/index.json")
-          echo "$INDEX" | python3 -m json.tool > /dev/null
-          echo "    index.json: valid JSON"
-
-          echo "==> Fetching images.json"
-          IMAGES=$(curl -sf "$SERVER_URL/spaces/$SPACE_TOKEN/streams/v1/images.json")
-          echo "$IMAGES" | python3 -m json.tool > /dev/null
-          echo "    images.json: valid JSON"
-
-          # Verify at least one product is present
-          PRODUCT_COUNT=$(echo "$IMAGES" | python3 -c "
-          import json, sys
-          d = json.load(sys.stdin)
-          products = d.get('products', {})
-          print(len(products))
-          ")
-          echo "    Products in index: $PRODUCT_COUNT"
-
-          if [ "$PRODUCT_COUNT" -eq 0 ]; then
-            echo "ERROR: No products found in simplestreams index after publish"
-            exit 1
-          fi
-
-          # Verify each product has at least one version with items
-          MISSING=$(echo "$IMAGES" | python3 -c "
-          import json, sys
-          d = json.load(sys.stdin)
-          missing = []
-          for key, product in d.get('products', {}).items():
-              versions = product.get('versions', {})
-              if not versions:
-                  missing.append(key)
-                  continue
-              for vkey, version in versions.items():
-                  items = version.get('items', {})
-                  if not items:
-                      missing.append(f'{key}/{vkey}')
-          print('\n'.join(missing))
-          ")
-
-          if [ -n "$MISSING" ]; then
-            echo "WARNING: Products/versions with no items:"
-            echo "$MISSING"
-          fi
-
-          echo "==> Simplestreams index verified"
-
-      - name: Test image pull with incus (smoke test)
-        if: ${{ vars.INCUS_SMOKE_TEST == 'true' }}
-        run: |
-          # Optional: only runs if INCUS_SMOKE_TEST variable is set to 'true'
-          # Requires a self-hosted runner with incus installed.
-          incus remote add incus-image-server \
-            "$SERVER_URL/spaces/$SPACE_TOKEN" \
-            --protocol simplestreams \
-            --public
-          incus image list incus-image-server:
-          incus remote remove incus-image-server
+            Includes rootfs + metadata tarballs for all distros.
+            Import into Incus: `incus image import <distro>-<arch>-rootfs.tar.xz <distro>-<arch>-metadata.tar.xz`
+          files: /tmp/release-files/*
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
