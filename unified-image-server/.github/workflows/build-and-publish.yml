@@ -122,9 +122,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ChromiumOS: arch is derived from board inside the script.
+          # reven = amd64 (tarball from sebanc/chromiumos-stage3 releases).
+          # arm64-generic = arm64 (tarball from this project's releases,
+          #   built by chromiumos-stage3/.github/workflows/build.yml).
           - script: build-chromiumos-image.sh
             board: reven
-            arch: amd64
+          - script: build-chromiumos-image.sh
+            board: arm64-generic
           - script: build-talos-image.sh
             arch: amd64
           - script: build-talos-image.sh
@@ -133,14 +138,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ${{ matrix.script }} (${{ matrix.arch }})
+      - name: Build ${{ matrix.script }} (${{ matrix.board || matrix.arch }})
         run: |
           mkdir -p /tmp/image-output
-          ARGS="--arch ${{ matrix.arch }} --output /tmp/image-output"
           if [ -n "${{ matrix.board }}" ]; then
-            ARGS="$ARGS --board ${{ matrix.board }}"
+            # ChromiumOS wrapper: board determines arch
+            bash manifests/bin/${{ matrix.script }} \
+              --board ${{ matrix.board }} \
+              --output /tmp/image-output
+          else
+            # Talos wrapper: arch is explicit
+            bash manifests/bin/${{ matrix.script }} \
+              --arch ${{ matrix.arch }} \
+              --output /tmp/image-output
           fi
-          bash manifests/bin/${{ matrix.script }} $ARGS
         timeout-minutes: 30
 
       - name: Upload build artifact

@@ -3,16 +3,64 @@
 ChromiumOS family integration for [penguins-eggs](https://github.com/pieroproietti/penguins-eggs),
 the live-ISO remastering tool.
 
-These files are drop-in replacements/additions for the `all-features` branch of
+These files are drop-in additions for the `all-features` branch of
 [Interested-Deving-1896/penguins-eggs](https://github.com/Interested-Deving-1896/penguins-eggs).
+They are not standalone — they are imported at runtime by `src/classes/ovary.d/produce.ts`
+in that branch.
+
+## Applying to penguins-eggs
+
+```bash
+EGGS_REPO=~/src/penguins-eggs   # path to your penguins-eggs checkout
+THIS_DIR=$(dirname "$0")         # this directory
+
+# TypeScript sources
+cp src/classes/ovary.d/*.ts      "$EGGS_REPO/src/classes/ovary.d/"
+cp src/classes/pacman.d/chromiumos.ts "$EGGS_REPO/src/classes/pacman.d/"
+
+# Config files (merge, don't overwrite)
+cp conf/derivatives_chromiumos.yaml "$EGGS_REPO/conf/"
+cp conf/flavours/chromiumos.yaml    "$EGGS_REPO/conf/flavours/"
+```
+
+Then rebuild penguins-eggs:
+```bash
+cd "$EGGS_REPO" && npm run build
+```
 
 ## Files
 
 | File | Destination in penguins-eggs | Purpose |
 |---|---|---|
-| `src/classes/pacman.d/chromiumos.ts` | same path | Package manager backend for ChromiumOS family |
+| `src/classes/ovary.d/cros_verity.ts` | same path | dm-verity hash tree generation; overlayfs setup for read-only rootfs |
+| `src/classes/ovary.d/dracut_verity_module.ts` | same path | Installs dracut modules for verity squashfs verification at boot |
+| `src/classes/ovary.d/cros_image.ts` | same path | CrOS-compatible GPT disk image (for depthcharge, requires `cgpt`+`futility`) |
+| `src/classes/ovary.d/submarine_boot.ts` | same path | Submarine depthcharge boot blob (requires `submarine`) |
+| `src/classes/pacman.d/chromiumos.ts` | same path | Package manager backend (Portage + Chromebrew); environment detection |
 | `conf/derivatives_chromiumos.yaml` | same path | Derivative distro detection list |
 | `conf/flavours/chromiumos.yaml` | same path | Browser flavour registry |
+
+## Imports consumed by produce.ts
+
+`src/classes/ovary.d/produce.ts` (upstream) dynamically imports these exports:
+
+```typescript
+// cros_verity.ts
+import { isRootReadOnly, isRootVerityProtected, isOverlayActive,
+         getSnapshotRootPath, setupOverlayForProduce,
+         generateVerityHashTree, hasVeritysetup, buildVerityCmdline }
+
+// dracut_verity_module.ts
+import { installAllVerityModules }
+
+// cros_image.ts
+import { createCrosImage, hasFutility }
+
+// submarine_boot.ts
+import { createSubmarineImage, isSubmarineAvailable }
+```
+
+All of these are exported by the files in this directory with matching signatures.
 
 ## Architecture support
 

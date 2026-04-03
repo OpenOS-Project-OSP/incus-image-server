@@ -29,55 +29,83 @@ OUTPUT_DIR="${OUTPUT_DIR:-.}"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
-# GitHub repo publishing pre-built stage3 tarballs
+# GitHub repos publishing pre-built stage3 tarballs
 STAGE3_REPO="${STAGE3_REPO:-}"  # override for self-hosted releases
 STAGE3_GITHUB_REPO="sebanc/chromiumos-stage3"
+# This project's own releases publish arm64 stage3 tarballs built by
+# chromiumos-stage3/.github/workflows/build.yml
+THIS_GITHUB_REPO="${THIS_GITHUB_REPO:-Interested-Deving-1896/incus-image-server}"
+
+ARCH_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --board)   BOARD="$2";      shift 2 ;;
-    --release) RELEASE="$2";    shift 2 ;;
-    --output)  OUTPUT_DIR="$2"; shift 2 ;;
-    --repo)    STAGE3_REPO="$2"; shift 2 ;;
+    --board)   BOARD="$2";         shift 2 ;;
+    --release) RELEASE="$2";       shift 2 ;;
+    --output)  OUTPUT_DIR="$2";    shift 2 ;;
+    --repo)    STAGE3_REPO="$2";   shift 2 ;;
+    --arch)    ARCH_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
 
-# Derive arch from board name
+# Derive arch from board name; --arch may override for forward-compatibility
+# but must be consistent with the board (used for metadata only, not build logic).
 case "${BOARD}" in
   reven)         ARCH="amd64" ;;
   arm64-generic|rpi4|rpi5|rk3588|rk3399|orangepi5) ARCH="arm64" ;;
   *) echo "ERROR: Unknown board '${BOARD}'. See chromiumos-stage3/boards/ for options."; exit 1 ;;
 esac
 
+if [[ -n "${ARCH_OVERRIDE}" && "${ARCH_OVERRIDE}" != "${ARCH}" ]]; then
+  echo "WARNING: --arch ${ARCH_OVERRIDE} ignored; board '${BOARD}' is ${ARCH}."
+fi
+
 SERIAL="$(date +%Y%m%d)"
 IMAGE_NAME="chromiumos-${BOARD}-${RELEASE}-${SERIAL}"
 
 # ── Resolve stage3 tarball URL ────────────────────────────────────────────────
+_resolve_tarball_from_github() {
+  local repo="$1"
+  local board="$2"
+  curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+    | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+needle = 'chromiumos-stage3-${board}'
+assets = [
+    a['browser_download_url']
+    for a in data.get('assets', [])
+    if a['name'].endswith('.tar.xz') and needle in a['name']
+]
+print(assets[0] if assets else '')
+"
+}
+
 if [[ -n "${STAGE3_REPO}" ]]; then
   # Direct URL override (e.g. self-hosted or local file)
   TARBALL_URL="${STAGE3_REPO}/chromiumos-stage3-${BOARD}-${RELEASE}.tar.xz"
 elif [[ "${BOARD}" == "reven" ]]; then
-  # sebanc/chromiumos-stage3 publishes reven releases
-  TARBALL_URL="$(curl -fsSL \
-    "https://api.github.com/repos/${STAGE3_GITHUB_REPO}/releases/latest" \
-    | python3 -c "
-import json,sys
-data=json.load(sys.stdin)
-assets=[a['browser_download_url'] for a in data.get('assets',[]) if a['name'].endswith('.tar.xz')]
-print(assets[0] if assets else '')
-")"
+  # sebanc/chromiumos-stage3 publishes reven (amd64) releases
+  TARBALL_URL="$(_resolve_tarball_from_github "${STAGE3_GITHUB_REPO}" "${BOARD}")"
   if [[ -z "${TARBALL_URL}" ]]; then
-    echo "ERROR: Could not find a release tarball in ${STAGE3_GITHUB_REPO}"
+    echo "ERROR: Could not find a reven tarball in ${STAGE3_GITHUB_REPO} releases"
     exit 1
   fi
 else
-  # arm64 and hardware boards: built by this project's CI
-  # Expect the tarball to be published under the unified-image-server releases
-  echo "ERROR: No pre-built tarball available for board '${BOARD}'."
-  echo "  Build it first: cd chromiumos-stage3 && sudo ./build.sh --board ${BOARD}"
-  echo "  Then re-run with: --repo file:///path/to/output"
-  exit 1
+  # arm64 and hardware-specific boards are built and published by this
+  # project's chromiumos-stage3 CI workflow (build.yml).
+  TARBALL_URL="$(_resolve_tarball_from_github "${THIS_GITHUB_REPO}" "${BOARD}")"
+  if [[ -z "${TARBALL_URL}" ]]; then
+    echo "ERROR: No pre-built tarball found for board '${BOARD}' in ${THIS_GITHUB_REPO} releases."
+    echo ""
+    echo "  To build it locally:"
+    echo "    cd chromiumos-stage3 && sudo ./build.sh --board ${BOARD}"
+    echo "    Then re-run with: --repo file:///path/to/output"
+    echo ""
+    echo "  Or wait for the weekly chromiumos-stage3 CI run to publish it."
+    exit 1
+  fi
 fi
 
 echo "==> ChromiumOS stage3 → Incus image"
