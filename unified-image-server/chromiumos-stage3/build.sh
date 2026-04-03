@@ -78,6 +78,11 @@ CHROMIUMOS_LONG_VERSION=$(git ls-remote \
 
 echo "==> ChromiumOS release: ${CHROMIUMOS_SHORT_VERSION} (${CHROMIUMOS_LONG_VERSION})"
 
+# Export to GitHub Actions environment if running in CI
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "CHROMIUMOS_SHORT_VERSION=${CHROMIUMOS_SHORT_VERSION}" >> "${GITHUB_ENV}"
+fi
+
 # ── Bootstrap chroot ──────────────────────────────────────────────────────────
 rm -rf "${SCRIPT_DIR}/chroot"
 mkdir "${SCRIPT_DIR}/chroot"

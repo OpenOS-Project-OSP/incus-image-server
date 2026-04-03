@@ -73,7 +73,10 @@ sudo ./bin/build-talos-image.sh --arch arm64 --version v1.7.6
 # ChromiumOS build-environment container (amd64, from sebanc releases)
 ./bin/build-chromiumos-image.sh
 
-# ChromiumOS build-environment container (arm64, from local stage3 build)
+# ChromiumOS build-environment container (arm64, from this project's releases)
+./bin/build-chromiumos-image.sh --board arm64-generic
+
+# ChromiumOS build-environment container (arm64, from a local stage3 build)
 ./bin/build-chromiumos-image.sh \
   --board arm64-generic \
   --repo file:///path/to/chromiumos-stage3/output
