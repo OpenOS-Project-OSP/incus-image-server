@@ -1,0 +1,69 @@
+server:
+  api:
+    # Address and port the REST API listens on.
+    address: "[::]:8080"
+
+  # IP addresses to block unconditionally.
+  blocklist:
+    # - 1.2.3.4
+
+  feedback:
+    # Set to true to enable the user-feedback endpoint.
+    enabled: false
+    timeout: 30
+    email:
+      smtp: "localhost:25"
+      from: "demo@example.com"
+      to: "admin@example.com"
+      subject: "User feedback from incus-demo"
+
+limits:
+  # Maximum number of concurrent demo containers across all users.
+  total: 64
+
+  # Maximum number of concurrent containers per source IP.
+  ip: 3
+
+  containers:
+    # Memory limit per container (supports K, M, G suffixes).
+    memory: "512MB"
+
+    # Maximum number of processes per container.
+    processes: 50
+
+    # Disk quota per container.
+    disk: "5GB"
+
+    # Session lifetime in minutes. Container is destroyed after this.
+    time: 30
+
+    # CPU limit (number of CPUs, or a fraction like "0.5").
+    cpu: "1"
+
+  # Network bandwidth limits (optional).
+  # bandwidth:
+  #   ingress: "10Mbit"
+  #   egress:  "10Mbit"
+
+images:
+  # Default image alias to use when creating demo containers.
+  # Must be present in the local Incus image store.
+  default: "ubuntu/24.04"
+
+  # Additional allowed image aliases users may request.
+  # allowed:
+  #   - "debian/12"
+  #   - "alpine/3.19"
+
+incus:
+  # Path to the Incus Unix socket.
+  socket: "/var/lib/incus/unix.socket"
+
+  # Incus profile applied to every demo container.
+  profile: "demo"
+
+  # Storage pool for demo containers.
+  storage_pool: "default"
+
+  # Network bridge for demo containers.
+  network: "incusbr0"

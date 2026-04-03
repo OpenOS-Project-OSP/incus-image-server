@@ -1,0 +1,34 @@
+[Unit]
+Description=Incus Demo Server
+Documentation=https://github.com/lxc/incus-demo-server
+After=network-online.target incus.service
+Wants=network-online.target
+Requires=incus.service
+
+[Service]
+Type=simple
+User=incus-demo
+Group=incus-demo
+
+ExecStart=/usr/local/bin/incus-demo-server --config /etc/incus-demo-server/config.yaml
+
+Restart=on-failure
+RestartSec=5s
+
+# Allow the service user to reach the Incus socket.
+SupplementaryGroups=incus-admin
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/incus-demo-server /run/incus-demo-server
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=incus-demo-server
+
+[Install]
+WantedBy=multi-user.target

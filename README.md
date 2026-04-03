@@ -10,7 +10,12 @@ incus-image-server/
 ├── server/              # Elixir/Phoenix simplestreams server (polar base)
 ├── manifests/           # Distrobuilder YAMLs + wrapper scripts
 ├── chromiumos-stage3/   # Arch-agnostic ChromiumOS stage3 builder
-└── penguins-eggs/       # ChromiumOS family support for penguins-eggs
+├── penguins-eggs/       # ChromiumOS family support for penguins-eggs
+└── demo-server/         # Deployment wrapper for incus-demo-server
+    ├── config/          # Site-local configuration template
+    ├── systemd/         # systemd service unit
+    ├── scripts/         # install.sh and setup-incus.sh
+    └── README.md
 ```
 
 ## Components
@@ -39,6 +44,13 @@ from openFyde). Board configurations are in `boards/`.
 ChromiumOS family backend for penguins-eggs live-ISO remastering tool.
 Covers package management via Portage + Chromebrew, derivative detection,
 and browser flavour selection.
+
+### demo-server/
+Deployment wrapper for [incus-demo-server](https://github.com/lxc/incus-demo-server),
+the backend powering the Incus online try-it service. Provides a config
+template, systemd unit, and install/setup scripts.
+
+See [demo-server/README.md](demo-server/README.md) for setup instructions.
 
 ## Sources
 
