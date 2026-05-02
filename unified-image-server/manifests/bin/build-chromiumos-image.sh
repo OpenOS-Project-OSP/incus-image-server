@@ -81,14 +81,26 @@ _resolve_tarball_from_github() {
   echo "$body" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-needle = 'chromiumos-stage3-${board}'
-assets = [
+board = sys.argv[1]
+assets_all = data.get('assets', [])
+# Primary: match our own naming convention (chromiumos-stage3-<board>*.tar.xz)
+needle = 'chromiumos-stage3-' + board
+matches = [
     a['browser_download_url']
-    for a in data.get('assets', [])
-    if a['name'].endswith('.tar.xz') and needle in a['name']
+    for a in assets_all
+    if (a['name'].endswith('.tar.xz') or a['name'].endswith('.tar.gz'))
+    and needle in a['name']
 ]
-print(assets[0] if assets else '')
-"
+# Fallback for sebanc/chromiumos-stage3: single generic tarball (reven board only)
+if not matches and board == 'reven':
+    matches = [
+        a['browser_download_url']
+        for a in assets_all
+        if a['name'].startswith('chromiumos') and
+           (a['name'].endswith('.tar.gz') or a['name'].endswith('.tar.xz'))
+    ]
+print(matches[0] if matches else '')
+" "$board"
 }
 
 if [[ -n "${STAGE3_REPO}" ]]; then
@@ -128,7 +140,11 @@ mkdir -p "${OUTPUT_DIR}/${IMAGE_NAME}"
 
 # ── Download stage3 tarball ───────────────────────────────────────────────────
 echo "==> Downloading stage3"
-TARBALL="${WORK_DIR}/chromiumos-stage3.tar.xz"
+# Detect compression from URL extension
+case "${TARBALL_URL}" in
+  *.tar.gz)  TARBALL="${WORK_DIR}/chromiumos-stage3.tar.gz"  ;;
+  *)         TARBALL="${WORK_DIR}/chromiumos-stage3.tar.xz"  ;;
+esac
 if [[ "${TARBALL_URL}" == file://* ]]; then
   cp "${TARBALL_URL#file://}" "${TARBALL}"
 else
@@ -140,7 +156,10 @@ fi
 # runtime. Strip the heaviest directories to reduce image size.
 echo "==> Extracting and stripping stage3"
 mkdir -p "${WORK_DIR}/rootfs"
-tar -xJf "${TARBALL}" -C "${WORK_DIR}/rootfs"
+case "${TARBALL}" in
+  *.tar.gz) tar -xzf "${TARBALL}" -C "${WORK_DIR}/rootfs" ;;
+  *)        tar -xJf "${TARBALL}" -C "${WORK_DIR}/rootfs" ;;
+esac
 
 # Remove build-time-only paths
 for strip_path in \
