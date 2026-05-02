@@ -52,6 +52,24 @@ template, systemd unit, and install/setup scripts.
 
 See [demo-server/README.md](demo-server/README.md) for setup instructions.
 
+## Build & Publish CI
+
+The `build-and-publish.yml` workflow builds images for all supported distros
+and boards on a weekly schedule (Sunday 02:00 UTC) and on pushes to `main`.
+
+**ChromiumOS / reven board notes:**
+- The `reven` (amd64) board sources its stage3 tarball from
+  [sebanc/chromiumos-stage3](https://github.com/sebanc/chromiumos-stage3).
+  The build will skip gracefully if no release exists yet rather than failing.
+- The `arm64-generic` board sources its tarball from releases published by
+  this repo's own CI. Until the first release is published, that build is
+  skipped automatically.
+
+**Talos board notes:**
+- Talos image builds require `loop` device access. GitHub-hosted runners do
+  not provide this; the Talos matrix entry will fail on standard runners and
+  requires a self-hosted runner with the appropriate kernel capabilities.
+
 ## Sources
 
 | Component | Upstream |
