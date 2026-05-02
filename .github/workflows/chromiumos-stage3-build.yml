@@ -1,4 +1,3 @@
-```yaml
 name: Build ChromiumOS Stage3
 
 on:
@@ -49,18 +48,7 @@ jobs:
 
       - name: Build stage3
         working-directory: unified-image-server/chromiumos-stage3
-        run: |
-          script=$(cat << 'EOF'
-          #!/bin/bash
-          # Your build script content here
-          # Ensure to replace {board} with the actual board variable
-          if [ -n "${extra_pkgs}" ]; then
-            emerge-${{ matrix.board }} ${extra_pkgs}
-          fi
-          EOF
-          )
-          echo "$script" | sudo tee /build/${{ matrix.board }}/init
-          sudo ./build.sh --board "${{ matrix.board }}" --jobs 4 --output .
+        run: sudo ./build.sh --board "${{ matrix.board }}" --jobs 4 --output .
         timeout-minutes: 480
 
       - name: Upload release artifact
@@ -73,4 +61,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
