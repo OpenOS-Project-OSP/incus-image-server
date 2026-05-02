@@ -118,14 +118,12 @@ else
   # project's chromiumos-stage3 CI workflow (build.yml).
   TARBALL_URL="$(_resolve_tarball_from_github "${THIS_GITHUB_REPO}" "${BOARD}")"
   if [[ -z "${TARBALL_URL}" ]]; then
-    echo "ERROR: No pre-built tarball found for board '${BOARD}' in ${THIS_GITHUB_REPO} releases."
-    echo ""
-    echo "  To build it locally:"
-    echo "    cd chromiumos-stage3 && sudo ./build.sh --board ${BOARD}"
-    echo "    Then re-run with: --repo file:///path/to/output"
-    echo ""
-    echo "  Or wait for the weekly chromiumos-stage3 CI run to publish it."
-    exit 1
+    echo "NOTE: No pre-built tarball found for board '${BOARD}' in ${THIS_GITHUB_REPO} releases."
+    echo "      Skipping — the weekly chromiumos-stage3 CI run will publish it."
+    echo "      To build manually:"
+    echo "        cd chromiumos-stage3 && sudo ./build.sh --board ${BOARD}"
+    echo "        Then re-run with: --repo file:///path/to/output"
+    exit 0
   fi
 fi
 
