@@ -68,8 +68,17 @@ IMAGE_NAME="chromiumos-${BOARD}-${RELEASE}-${SERIAL}"
 _resolve_tarball_from_github() {
   local repo="$1"
   local board="$2"
-  curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
-    | python3 -c "
+  local response http_code body
+  response=$(curl -sSL -w "\n%{http_code}" \
+    "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null) || true
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+  # Return empty string if no releases exist yet (404) or any other error
+  if [[ "$http_code" != "200" ]]; then
+    echo ""
+    return 0
+  fi
+  echo "$body" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 needle = 'chromiumos-stage3-${board}'
