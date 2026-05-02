@@ -55,7 +55,7 @@ jobs:
               {"distro":"opensuse",    "arch":"amd64"},
               {"distro":"gentoo-ctr-openrc",  "arch":"amd64"},
               {"distro":"gentoo-ctr-systemd", "arch":"amd64"}
-            ]' | jq -c . >> "$GITHUB_OUTPUT"
+            ]' | jq -c . | sed 's/\\//g' >> "$GITHUB_OUTPUT"
           fi
 
   # ── 2. Build images with Distrobuilder ────────────────────────────────────
