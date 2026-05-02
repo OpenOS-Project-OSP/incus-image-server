@@ -93,6 +93,10 @@ if [[ "${BOOTSTRAP_URL}" == *.zst ]]; then
   curl -L "${BOOTSTRAP_URL}" -o "${BOOTSTRAP_ARCHIVE}.zst"
   tar --zstd --strip "${BOOTSTRAP_STRIP}" -xf "${BOOTSTRAP_ARCHIVE}.zst" \
     -C "${SCRIPT_DIR}/chroot"
+elif [[ "${BOOTSTRAP_URL}" == *.gz ]]; then
+  curl -L "${BOOTSTRAP_URL}" -o "${BOOTSTRAP_ARCHIVE}.gz"
+  tar --gz --strip "${BOOTSTRAP_STRIP}" -xf "${BOOTSTRAP_ARCHIVE}.gz" \
+    -C "${SCRIPT_DIR}/chroot"
 else
   curl -L "${BOOTSTRAP_URL}" -o "${BOOTSTRAP_ARCHIVE}.xz"
   tar --xz --strip "${BOOTSTRAP_STRIP}" -xf "${BOOTSTRAP_ARCHIVE}.xz" \
@@ -171,6 +175,7 @@ _CHROMIUMOS_LONG_VERSION="${CHROMIUMOS_LONG_VERSION}"
 # make.conf / repos.conf: written via printf to avoid nested heredoc quoting
 python3 - << PYEOF
 import os, textwrap
+script_dir = "${SCRIPT_DIR}"
 
 board        = "${_BOARD}"
 board_name   = "${_BOARD_NAME}"
@@ -192,15 +197,15 @@ if command -v pacman-key &>/dev/null; then
     https://geo.mirror.pkgbuild.com \\\\
     https://mirrors.rit.edu/archlinux \\\\
     https://archlinux.mirror.digitalpacific.com.au; do
-    avg_speed=\\$(curl -fsS -m 5 -r 0-1048576 \\\\
+    avg_speed=\$(curl -fsS -m 5 -r 0-1048576 \\\\
       -w '%{{speed_download}}' -o /dev/null \\\\
-      --url "\\${{mirror}}/core/os/x86_64/core.db" 2>/dev/null || echo 0)
-    if [ "\\${{avg_speed%.*}}" -gt "\\${{cur_speed%.*}}" ] 2>/dev/null; then
-      cur_speed=\\${{avg_speed}}
-      default_mirror=\\${{mirror}}
+      --url "\${{mirror}}/core/os/x86_64/core.db" 2>/dev/null || echo 0)
+    if [ "\${{avg_speed%.*}}" -gt "\${{cur_speed%.*}}" ] 2>/dev/null; then
+      cur_speed=\${{avg_speed}}
+      default_mirror=\${{mirror}}
     fi
   done
-  sed -i "s@#Server = \\${{default_mirror}}@Server = \\${{default_mirror}}@g" \\\\
+  sed -i "s@#Server = \${{default_mirror}}@Server = \${{default_mirror}}@g" \\\\
     /etc/pacman.d/mirrorlist
   pacman-key --init
   pacman-key --populate
@@ -243,7 +248,7 @@ set -e
 # Apply openFyde patches if present
 if [ -d /mnt/host/source/patches/openfyde ]; then
   for patch in /mnt/host/source/patches/openfyde/*.patch; do
-    [ -f "$patch" ] && git -C /mnt/host/source apply "$patch" || true
+    [ -f "\$patch" ] && git -C /mnt/host/source apply "\$patch" || true
   done
 fi
 
@@ -278,7 +283,7 @@ sudo sed -i -z \\
   /mnt/host/source/src/third_party/chromiumos-overlay/sys-devel/gcc/gcc-*.ebuild
 sudo sed -i '/virtual\\/perl-Math-BigInt/d' \\
   /mnt/host/source/src/third_party/portage-stable/dev-lang/perl/perl-*.ebuild
-printf '#!/bin/bash\\nexec $1\\n' | \\
+printf '#!/bin/bash\\nexec \$1\\n' | \\
   sudo tee /mnt/host/source/src/platform2/common-mk/meson_test.py
 
 setup_board --board={board}
@@ -378,7 +383,7 @@ CHROMIUMOS_BUILD
 CHROOT_USER
 """
 
-with open("${SCRIPT_DIR}/chroot/init", "w") as f:
+with open(os.path.join(script_dir, "chroot", "init"), "w") as f:
     f.write(script)
 PYEOF
 
@@ -386,7 +391,45 @@ chmod 0755 "${SCRIPT_DIR}/chroot/init"
 
 # ── Run the bootstrap ─────────────────────────────────────────────────────────
 echo "==> Running bootstrap (this will take several hours)"
-chroot "${SCRIPT_DIR}/chroot" /init
+
+# Mount virtual filesystems required by pacman/apt/portage inside the chroot.
+# Ensure mount points exist — minimal bootstrap tarballs may omit them.
+# pacman reads /proc/self/mountinfo to locate the cachedir's mount point; the
+# cachedir must appear as a real mount or pacman aborts with "could not determine
+# cachedir mount point". A tmpfs at /var/cache/pacman/pkg satisfies this.
+sudo mkdir -p "${SCRIPT_DIR}/chroot/proc" \
+              "${SCRIPT_DIR}/chroot/sys" \
+              "${SCRIPT_DIR}/chroot/dev" \
+              "${SCRIPT_DIR}/chroot/dev/pts" \
+              "${SCRIPT_DIR}/chroot/dev/shm" \
+              "${SCRIPT_DIR}/chroot/var/cache/pacman/pkg"
+# Bind-mount the chroot root onto itself so / appears as a real mount in
+# /proc/self/mountinfo — pacman requires this to check available disk space.
+sudo mount --bind "${SCRIPT_DIR}/chroot" "${SCRIPT_DIR}/chroot"
+sudo mount --bind /proc    "${SCRIPT_DIR}/chroot/proc"
+sudo mount --bind /sys     "${SCRIPT_DIR}/chroot/sys"
+sudo mount --bind /dev     "${SCRIPT_DIR}/chroot/dev"
+sudo mount --bind /dev/pts "${SCRIPT_DIR}/chroot/dev/pts" 2>/dev/null || true
+sudo mount -t tmpfs tmpfs  "${SCRIPT_DIR}/chroot/dev/shm"
+sudo mount -t tmpfs tmpfs  "${SCRIPT_DIR}/chroot/var/cache/pacman/pkg"
+
+cleanup_mounts() {
+  sudo umount -lf "${SCRIPT_DIR}/chroot/var/cache/pacman/pkg" 2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot/dev/shm"  2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot/dev/pts"  2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot/dev"      2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot/sys"      2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot/proc"     2>/dev/null || true
+  sudo umount -lf "${SCRIPT_DIR}/chroot"          2>/dev/null || true
+}
+trap cleanup_mounts EXIT
+
+# unshare --mount gives the chroot a new mount namespace so cros_sdk can
+# bind-mount its own chroot dir and call pivot_root without EINVAL.
+sudo unshare --mount --pid --fork \
+  chroot "${SCRIPT_DIR}/chroot" /init
+cleanup_mounts
+trap - EXIT
 
 # ── Package the stage3 tarball ────────────────────────────────────────────────
 BUILD_ROOT="${SCRIPT_DIR}/chroot/home/temp/build_env/chromiumos/out/build/${BOARD}"
