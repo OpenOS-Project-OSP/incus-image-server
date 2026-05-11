@@ -27,7 +27,7 @@ jobs:
     outputs:
       include: ${{ steps.set.outputs.include }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - id: set
         run: |
@@ -68,7 +68,7 @@ jobs:
         include: ${{ fromJson(needs.matrix.outputs.include) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install distrobuilder
         run: |
@@ -80,7 +80,7 @@ jobs:
 
       - name: Set up QEMU (arm64 builds on amd64 runners)
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
@@ -114,7 +114,7 @@ jobs:
         run: echo "serial=$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-${{ matrix.distro }}-${{ matrix.arch }}-${{ steps.serial.outputs.serial }}
           path: /tmp/image-output/
@@ -141,7 +141,7 @@ jobs:
             arch: arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build ${{ matrix.script }} (${{ matrix.board || matrix.arch }})
         run: |
@@ -160,7 +160,7 @@ jobs:
         timeout-minutes: 30
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-wrapper-${{ matrix.script }}-${{ matrix.board || matrix.arch }}
           path: /tmp/image-output/
@@ -182,7 +182,7 @@ jobs:
 
     steps:
       - name: Download all image artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/artifacts
           pattern: image-*
@@ -223,7 +223,7 @@ jobs:
           ls -lh /tmp/release-files/
 
       - name: Create GitHub Release and upload images
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Images ${{ steps.tag.outputs.tag }}
