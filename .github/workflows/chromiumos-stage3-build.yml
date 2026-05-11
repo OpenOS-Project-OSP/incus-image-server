@@ -39,7 +39,7 @@ jobs:
       matrix:
         board: ${{ fromJson(needs.matrix.outputs.boards) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install qemu-user-static (arm64 boards)
         if: ${{ matrix.board != 'reven' }}
@@ -64,7 +64,7 @@ jobs:
         timeout-minutes: 480
 
       - name: Upload release artifact
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.CHROMIUMOS_SHORT_VERSION }}-${{ github.run_id }}
           name: ChromiumOS Stage3 ${{ env.CHROMIUMOS_SHORT_VERSION }}
