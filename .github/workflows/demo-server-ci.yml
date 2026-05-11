@@ -20,7 +20,7 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run ShellCheck
         run: |
           shellcheck demo-server/scripts/install.sh
@@ -30,7 +30,7 @@ jobs:
     name: Validate config YAML
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install yq
         run: |
           sudo wget -qO /usr/local/bin/yq \
@@ -43,7 +43,7 @@ jobs:
     name: Validate systemd unit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check unit syntax
         run: |
           sudo apt-get install -y --no-install-recommends systemd 2>/dev/null || true
@@ -59,8 +59,8 @@ jobs:
     name: Build upstream binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.21'
       - name: Clone and build incus-demo-server
